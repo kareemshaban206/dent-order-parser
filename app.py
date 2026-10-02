@@ -28,7 +28,7 @@ st.markdown("<h1 class='main-title'>🦷 Magic Dent Order Parser</h1>", unsafe_a
 st.markdown("<p class='sub-text'>أهلاً بك يا دكتور. تفريغ الطلبيات والأسعار وحساب الإجمالي بذكاء تام.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-FIXED_API_KEY = "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"
+FIXED_API_KEY = ""
 
 api_key = FIXED_API_KEY
 if not api_key or "حط_مفتاحك" in api_key:
