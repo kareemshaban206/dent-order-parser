@@ -25,41 +25,45 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>🦷 Magic Dent Order Parser</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-text'>مرحباً بك يا دكتور. أداة تفريغ وترجمة رسايل الواتساب الطبية الذكية.</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-text'>أهلاً بك يا دكتور. تفريغ الطلبيات والأسعار وحساب الإجمالي بذكاء تام.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-api_key = ""
-try:
-    if "GROQ_API_KEY" in st.secrets:
-        api_key = st.secrets["GROQ_API_KEY"]
-except Exception:
-    pass
+FIXED_API_KEY = "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"
 
-if not api_key:
+api_key = FIXED_API_KEY
+if not api_key or "حط_مفتاحك" in api_key:
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            api_key = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        pass
+
+if not api_key or "حط_مفتاحك" in api_key:
     api_key = st.text_input("Enter your Groq API Key (gsk_...):", type="password")
 
-whatsapp_message = st.text_area("Paste your messy WhatsApp order message here (Arabic, Franco, English):", height=220)
+whatsapp_message = st.text_area("Paste your messy WhatsApp order message here (Arabic, Franco, English, with quantities and prices):", height=220)
 
-if st.button("🚀 Analyze All Items & Extract Table"):
-    if not api_key:
+if st.button("🚀 Analyze Items, Prices & Calculate Total"):
+    if not api_key or "حط_مفتاحك" in api_key:
         st.warning("Please enter or configure your Groq API Key first.")
     elif not whatsapp_message.strip():
         st.warning("Please paste the WhatsApp message first.")
     else:
-        with st.spinner("جاري قراءة واستخراج كافة الأصناف بالتفصيل الكامل..."):
+        with st.spinner("جاري قراءة الأصناف، التمييز بين الكميات والأسعار، وحساب الإجمالي بدقة..."):
             try:
                 client = OpenAI(
                     api_key=api_key,
                     base_url="https://api.groq.com/openai/v1"
                 )
                 
+                # تذكير الموديل بذكاء بالفرق بين الكمية الصغيرة والأسعار الكبيرة وحساب الإجمالي
                 response = client.chat.completions.create(
                     model="openai/gpt-oss-120b",
                     max_tokens=8192,
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are an expert dental supply assistant. Your task is to process the ENTIRE messy WhatsApp order message (Arabic, English, Franco-Arabic) completely without skipping ANY items. Extract EVERY single item, quantity, and brand name/notes. Translate Franco-Arabic or Arabic terms into professional English medical dental supply terms. You MUST output ALL items in the message. Return ONLY structured rows separated by a pipe '|' in this exact format for each item: Item Name | Amount | Brand Name Or Notes. Do not summarize, do not skip items, and do not include markdown code blocks or extra text."
+                            "content": "You are an expert dental supply assistant. Process the ENTIRE messy WhatsApp order message completely without skipping ANY items. Extract EVERY single item, quantity (usually small numbers like 1, 2, 3), price (usually larger numbers or explicitly marked with currency), and brand name/notes. Translate Franco-Arabic or Arabic terms into professional English medical dental supply terms. You MUST output ALL items. Return ONLY structured rows separated by a pipe '|' in this exact format for each item: Item Name | Amount | Price | Brand Name Or Notes. If a price is not mentioned, write '-'. At the very end, add a summary row in this exact format: TOTAL | - | [Calculated Total Sum of Prices or '-'] | - . Do not summarize, do not skip items, and do not include markdown code blocks or extra text."
                         },
                         {
                             "role": "user",
@@ -76,7 +80,31 @@ if st.button("🚀 Analyze All Items & Extract Table"):
                 for line in lines:
                     if '|' in line:
                         parts = line.split('|')
-                        if len(parts) >= 3:
+                        if len(parts) >= 4:
+                            item_name = parts[0].strip()
+                            qty = parts[1].strip()
+                            price = parts[2].strip()
+                            notes = parts[3].strip()
+                            
+                            # التحقق مما إذا كان هذا هو صف الإجمالي النهائي
+                            if "TOTAL" in item_name.upper() or "إجمالي" in item_name:
+                                parsed_data.append({
+                                    "N": "TOTAL",
+                                    "Item": "TOTAL",
+                                    "Amount": "-",
+                                    "Price": price,
+                                    "Brand Name / Notes": "-"
+                                })
+                            else:
+                                parsed_data.append({
+                                    "N": idx,
+                                    "Item": item_name,
+                                    "Amount": qty,
+                                    "Price": price,
+                                    "Brand Name / Notes": notes
+                                })
+                                idx += 1
+                        elif len(parts) == 3: # احتياطي لو الرد جاء بـ 3 أعمدة
                             item_name = parts[0].strip()
                             qty = parts[1].strip()
                             notes = parts[2].strip()
@@ -85,24 +113,25 @@ if st.button("🚀 Analyze All Items & Extract Table"):
                                 "N": idx,
                                 "Item": item_name,
                                 "Amount": qty,
-                                "Brand Name Or Notes": notes
+                                "Price": "-",
+                                "Brand Name / Notes": notes
                             })
                             idx += 1
                 
                 if parsed_data:
                     df = pd.DataFrame(parsed_data)
                 else:
-                    df = pd.DataFrame([{"N": 1, "Item": "Error parsing output", "Amount": "", "Brand Name Or Notes": result_text}])
+                    df = pd.DataFrame([{"N": 1, "Item": "Error parsing output", "Amount": "", "Price": "", "Brand Name / Notes": result_text}])
                 
                 st.session_state['df_orders'] = df
-                st.success(f"تم بنجاح استخراج جميع الأصناف بالكامل ({len(df)} صنفاً) بدقة تامة!")
+                st.success(f"تم بنجاح تحليل كافة الأصناف والأسعار وحساب الإجمالي بدقة تامة!")
                 
             except Exception as e:
                 st.error(f"حدث خطأ أثناء الاتصال بـ Groq: {e}")
 
 if 'df_orders' in st.session_state:
     df = st.session_state['df_orders']
-    st.markdown(f"### 📊 Extracted & Translated Orders Table (Total: {len(df)} Items):")
+    st.markdown(f"### 📊 Extracted Orders, Prices & Total Table:")
     st.dataframe(df, use_container_width=True)
     
     def create_word_file(dataframe):
@@ -114,21 +143,22 @@ if 'df_orders' in st.session_state:
             section.right_margin = Inches(0.5)
             
         p = doc.add_paragraph()
-        r = p.add_run("Dent Magic - قائمة الطلبيات والمستلزمات الطبية")
+        r = p.add_run("Dent Magic - قائمة الطلبيات، الأسعار، والإجمالي")
         r.font.name = 'Helvetica'
         r.font.size = Pt(14)
         r.font.bold = True
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph()
         
-        table = doc.add_table(rows=1, cols=4)
+        table = doc.add_table(rows=1, cols=5)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
         hdr_cells = table.rows[0].cells
         hdr_cells[0].text = "N"
         hdr_cells[1].text = "Item"
         hdr_cells[2].text = "Amount"
-        hdr_cells[3].text = "Brand Name / Notes"
+        hdr_cells[3].text = "Price"
+        hdr_cells[4].text = "Brand / Notes"
         
         for cell in hdr_cells:
             shading = parse_xml(r'<w:shd {} w:fill="F2F2F2"/>'.format(nsdecls('w')))
@@ -145,7 +175,8 @@ if 'df_orders' in st.session_state:
             row_cells[0].text = str(row['N'])
             row_cells[1].text = str(row['Item'])
             row_cells[2].text = str(row['Amount'])
-            row_cells[3].text = str(row['Brand Name Or Notes'])
+            row_cells[3].text = str(row['Price'])
+            row_cells[4].text = str(row['Brand Name / Notes'])
             
             for cell in row_cells:
                 for p_r in cell.paragraphs:
@@ -174,18 +205,19 @@ if 'df_orders' in st.session_state:
             spaceAfter=15
         )
         
-        elements.append(Paragraph("Dent Magic - قائمة الطلبيات والمستلزمات الطبية", title_style))
+        elements.append(Paragraph("Dent Magic - قائمة الطلبيات، الأسعار، والإجمالي", title_style))
         
-        table_data = [["N", "Item", "Amount", "Brand Name / Notes"]]
+        table_data = [["N", "Item", "Amount", "Price", "Brand / Notes"]]
         for index, row in dataframe.iterrows():
             table_data.append([
                 str(row['N']),
                 str(row['Item']),
                 str(row['Amount']),
-                str(row['Brand Name Or Notes'])
+                str(row['Price']),
+                str(row['Brand Name / Notes'])
             ])
             
-        t = Table(table_data, colWidths=[40, 220, 60, 170])
+        t = Table(table_data, colWidths=[30, 180, 50, 70, 140])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F2F2F2')),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
@@ -211,7 +243,7 @@ if 'df_orders' in st.session_state:
         st.download_button(
             label="📄 Download Word (.docx)",
             data=word_file,
-            file_name="Magic_Dent_Orders.docx",
+            file_name="Magic_Dent_Orders_Total.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         
@@ -220,6 +252,6 @@ if 'df_orders' in st.session_state:
         st.download_button(
             label="📑 Download PDF",
             data=pdf_file,
-            file_name="Magic_Dent_Orders.pdf",
+            file_name="Magic_Dent_Orders_Total.pdf",
             mime="application/pdf"
         )
